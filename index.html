@@ -22,17 +22,17 @@ function geo(){rw=Math.min(W*0.92,400);rx=(W-rw)/2;lw=rw/3;cw=lw*0.6;ch=cw*1.75;
 function resize(){D=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;ctx.setTransform(D,0,0,D,0,0);geo();}
 addEventListener('resize',resize);resize();
 
-var SHARE_URL=''; // после запуска в Telegram вставь сюда ссылку t.me/твой_бот/название
+var SHARE_URL='https://t.me/molniya_car_bot/Molniya';
 var S={coins:0,car:0,owned:[0],best:0};
 try{var _s=JSON.parse(localStorage.getItem('car_save')||'null');if(_s)for(var k in _s)S[k]=_s[k];}catch(e){}
 function save(){try{localStorage.setItem('car_save',JSON.stringify(S));}catch(e){}}
 
-var CARS=[{n:'Молния',c:'#ff3b30',p:0,t:0},{n:'Такси',c:'#ffd60a',p:30,t:1},{n:'Полиция',c:'#2979ff',p:60,t:2},{n:'Пожарная',c:'#ff6d00',p:100,t:3}];
+var CARS=[{n:'Молния',c:'#ff3b30',p:0,t:0,d:'Классика'},{n:'Такси',c:'#ffd60a',p:150,t:1,m:2,d:'Монеты x2'},{n:'Полиция',c:'#2979ff',p:300,t:2,h:1,d:'+1 жизнь'},{n:'Пожарная',c:'#ff6d00',p:600,t:3,f:20,d:'Больше бензина'}];
 var WORLDS=[{n:'🏙️ Город',side:'#7ed957',road:'#5a5f6b'},{n:'🏜️ Пустыня',side:'#f7d488',road:'#7a6048'},{n:'❄️ Снег',side:'#f4fbff',road:'#6c7c95'},{n:'🌈 Космос',side:'#2b1b72',road:'#33356b'}];
 var OTHER=['#7c4dff','#00c853','#ff4081','#00b8d4','#ff9100'];
 
 var state='menu',items,pops,fuel,dist,run,turbo,bump,carX,px,spawnT,sc,lastW,t=0,btns=[],msg='',msgT=0,actx=null;
-function reset(){items=[];pops=[];fuel=100;dist=0;run=0;turbo=0;bump=0;carX=W/2;px=W/2;spawnT=H*0.2;sc=0;lastW=0;}
+function reset(){lives=3+(CARS[S.car].h||0);score=0;combo=0;shake=0;newBest=false;items=[];pops=[];fuel=100;dist=0;run=0;turbo=0;bump=0;carX=W/2;px=W/2;spawnT=H*0.2;sc=0;lastW=0;}
 reset();
 
 function initAudio(){try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();}catch(e){}}
@@ -43,9 +43,12 @@ function toast(m){msg=m;msgT=performance.now()+1800;}
 function pop(x,y,txt,col){pops.push({x:x,y:y,txt:txt,col:col,life:1});}
 function rr(x,y,w,h,r){ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,r||12);else ctx.rect(x,y,w,h);}
 
+var lives=3,score=0,combo=0,shake=0,newBest=false,fin=0,spd=0;
+function over(){state='over';shake=0;fin=Math.floor(dist)+score;if(fin>S.best){S.best=fin;newBest=true;}save();beep(200,.5,'sawtooth');buzz('error');}
 function spawnRow(){
   var o=Math.floor(Math.random()*3),r=Math.random();
-  if(r<0.75){var q=Math.random();items.push({k:q<0.4?'cone':q<0.7?'box':'car',l:o,y:-ch,col:OTHER[Math.floor(Math.random()*OTHER.length)]});}
+  if(dist>250&&r<0.28){var fr=Math.floor(Math.random()*3);for(var a=0;a<3;a++)if(a!==fr)items.push({k:'box',l:a,y:-ch});items.push({k:'coin',l:fr,y:-ch});return;}
+  if(r<0.8){var q=Math.random();items.push({k:q<0.4?'cone':q<0.7?'box':'car',l:o,y:-ch,col:OTHER[Math.floor(Math.random()*OTHER.length)]});}
   var l2=(o+1+Math.floor(Math.random()*2))%3,z=Math.random();
   if(z<0.32)items.push({k:'fuel',l:l2,y:-ch});
   else if(z<0.82)items.push({k:'coin',l:l2,y:-ch});
@@ -54,29 +57,29 @@ function spawnRow(){
 
 function update(dt){
   t+=dt;
-  var base=H*0.34+Math.min(H*0.12,dist/20);
+  var base=H*0.30+Math.min(H*0.6,dist*H/2500);
   var v=base*(turbo>0?1.7:1)*(bump>0?0.45:1);
-  sc+=v*dt;dist+=v*dt/40;
-  if(turbo<=0)fuel-=dt*2.2;
-  if(turbo>0)turbo-=dt;if(bump>0)bump-=dt;
-  spawnT-=v*dt;if(spawnT<=0){spawnRow();spawnT=H*0.34;}
+  sc+=v*dt;dist+=v*dt/40;spd=v;
+  if(turbo<=0)fuel-=dt*Math.min(4,2+dist/600);
+  if(turbo>0)turbo-=dt;if(bump>0)bump-=dt;if(shake>0)shake-=dt;
+  spawnT-=v*dt;if(spawnT<=0){spawnRow();spawnT=H*Math.max(0.26,0.38-dist/6000);}
   px+=(carX-px)*Math.min(1,10*dt);
   px=Math.max(rx+cw/2,Math.min(rx+rw-cw/2,px));
   for(var i=items.length-1;i>=0;i--){
     var it=items[i];it.y+=v*dt;var ix=rx+lw*(it.l+0.5);
     if(Math.abs(ix-px)<lw*0.42&&Math.abs(it.y-cy)<ch*0.5){
-      if(it.k==='coin'){run++;S.coins++;beep(880,.08);}
-      else if(it.k==='fuel'){fuel=Math.min(100,fuel+30);pop(ix,it.y,'+⛽','#00a152');beep(520,.18);}
+      if(it.k==='coin'){combo++;var cm=CARS[S.car].m||1;run+=cm;S.coins+=cm;score+=2*Math.min(5,1+Math.floor(combo/5));beep(880+Math.min(combo,20)*25,.08);if(combo%5===0)pop(ix,it.y,'Серия x'+Math.min(5,1+Math.floor(combo/5)),'#ff6d00');}
+      else if(it.k==='fuel'){fuel=Math.min(100,fuel+30+(CARS[S.car].f||0));pop(ix,it.y,'+⛽','#00a152');beep(520,.18);}
       else if(it.k==='turbo'){turbo=3.5;pop(ix,it.y,'ТУРБО!','#ff6d00');beep(990,.25);buzz('success');}
-      else if(turbo>0){pop(ix,it.y,'Вжух!','#7c4dff');beep(600,.1);}
-      else{bump=0.6;fuel=Math.max(0,fuel-8);pop(ix,it.y,'Бам!','#d50000');beep(140,.25,'sawtooth');buzz('error');}
+      else if(turbo>0){score+=15;shake=0.2;pop(ix,it.y,'Вжух! +15','#7c4dff');beep(600,.1);}
+      else{bump=0.7;lives--;combo=0;shake=0.4;pop(ix,it.y,'Бам!','#d50000');beep(140,.25,'sawtooth');buzz('error');if(lives<=0)over();}
       items.splice(i,1);
-    }else if(it.y>H+60)items.splice(i,1);
+    }else if(!it.n&&it.y>cy+ch*0.5&&(it.k==='cone'||it.k==='box'||it.k==='car')){it.n=1;if(Math.abs(ix-px)<lw*0.78){score+=5;pop(ix,cy-ch,'Впритык! +5','#ff6d00');beep(1200,.05);}}else if(it.y>H+60)items.splice(i,1);
   }
   for(var j=pops.length-1;j>=0;j--){pops[j].y-=45*dt;pops[j].life-=dt*1.1;if(pops[j].life<=0)pops.splice(j,1);}
   var wi=Math.floor(dist/400)%4;
   if(wi!==lastW){lastW=wi;pop(W/2,H*0.3,WORLDS[wi].n,'#fff');beep(700,.3);}
-  if(fuel<=0){state='refuel';if(dist>S.best)S.best=Math.floor(dist);save();}
+  if(fuel<=0)over();
 }
 
 function drawCar(x,y,w,c,type){
@@ -134,11 +137,13 @@ function hud(){
   var fc=fuel>50?'#00c853':fuel>25?'#ffd600':(Math.floor(t*6)%2?'#ff1744':'#ff8a80');
   ctx.fillStyle=fc;rr(44,top+4,Math.max(8,bw*fuel/100),20,10);ctx.fill();
   ctx.font='bold 20px system-ui';ctx.textAlign='right';stroked('🪙 '+S.coins,W-14,top+22);
-  ctx.textAlign='center';ctx.font='bold 18px system-ui';stroked(Math.floor(dist)+' м',W/2,top+52);
-  if(fuel<25&&state==='play'){ctx.font='bold 18px system-ui';stroked('Лови ⛽!',W/2,top+80);}
+  ctx.textAlign='center';ctx.font='bold 18px system-ui';stroked(String(Math.floor(dist)+score),W/2,top+52);
+  ctx.font='20px system-ui';ctx.textAlign='left';var hs='';for(var h=0;h<lives;h++)hs+='❤️';ctx.fillText(hs,14,top+54);ctx.textAlign='center';
+  if(combo>=5){ctx.font='bold 16px system-ui';stroked('Серия x'+Math.min(5,1+Math.floor(combo/5)),W/2,top+76);}
+  if(fuel<25&&state==='play'){ctx.font='bold 18px system-ui';stroked('Лови ⛽!',W/2,top+100);}
 }
 function btn(x,y,w,h,label,fn,primary){btns.push({x:x,y:y,w:w,h:h,fn:fn});ctx.fillStyle=primary?'#ffd600':'#8e5cf7';rr(x,y,w,h,14);ctx.fill();ctx.fillStyle=primary?'#222':'#fff';ctx.font='bold 18px system-ui';ctx.textAlign='center';ctx.fillText(label,x+w/2,y+h/2+6);}
-function share(){var url=SHARE_URL||(location.origin+location.pathname),text='Покатай Молнию! Мой рекорд: '+S.best+' м 🏎️';var link='https://t.me/share/url?url='+encodeURIComponent(url)+'&text='+encodeURIComponent(text);
+function share(){var url=SHARE_URL||(location.origin+location.pathname),text='Покатай Молнию! Мой рекорд: '+S.best+' очков 🏎️';var link='https://t.me/share/url?url='+encodeURIComponent(url)+'&text='+encodeURIComponent(text);
   try{if(tg&&tg.openTelegramLink){tg.openTelegramLink(link);return;}}catch(e){}
   if(navigator.share){navigator.share({title:'Молния',text:text,url:url}).catch(function(e){if(!e||e.name!=='AbortError')copyLink(url,text);});return;}
   copyLink(url,text);}
@@ -153,11 +158,11 @@ function overlay(){
   if(state==='menu'){
     ctx.font='bold 38px system-ui';ctx.fillText('Молния 🏎️',W/2,y+36);
     var c=CARS[S.car];drawCar(W/2,y+120+Math.sin(t*3)*4,cw*1.1,c.c,c.t);
-    ctx.fillStyle='#fff';ctx.font='15px system-ui';ctx.fillText('Монет: '+S.coins+' 🪙  ·  Рекорд: '+S.best+' м',W/2,y+205);
+    ctx.fillStyle='#fff';ctx.font='15px system-ui';ctx.fillText('Монет: '+S.coins+' 🪙  ·  Рекорд: '+S.best+' очков',W/2,y+205);
     y+=225;btn(bx,y,bw,52,'🏁 Ехать!',play,true);y+=64;
     btn(bx,y,bw,48,'🚗 Гараж',function(){state='garage';});y+=60;
     btn(bx,y,bw,48,'👥 Позвать друга',function(){share();});y+=64;
-    ctx.fillStyle='#fff';ctx.font='13px system-ui';ctx.fillText('Води пальцем влево и вправо. Лови ⛽ и 🪙',W/2,y);
+    ctx.fillStyle='#fff';ctx.font='13px system-ui';ctx.fillText('Води пальцем. Лови ⛽ 🪙 ⚡ и не врезайся!',W/2,y);
   }else if(state==='garage'){
     ctx.font='bold 26px system-ui';ctx.fillText('Гараж',W/2,44);ctx.font='16px system-ui';ctx.fillText('Монет: '+S.coins+' 🪙',W/2,70);
     var tw=Math.min(150,(W-48)/2),th=Math.min(170,(H-230)/2),gx=(W-tw*2-12)/2;
@@ -165,13 +170,13 @@ function overlay(){
       ctx.fillStyle=S.car===i?'rgba(255,214,0,.45)':'rgba(255,255,255,.15)';rr(tx,ty,tw,th,16);ctx.fill();
       btns.push({x:tx,y:ty,w:tw,h:th,fn:function(){carTap(i);}});
       drawCar(tx+tw/2,ty+th*0.42,Math.min(50,th*0.3),CARS[i].c,CARS[i].t);
-      ctx.fillStyle='#fff';ctx.font='bold 16px system-ui';ctx.textAlign='center';ctx.fillText(CARS[i].n,tx+tw/2,ty+th-34);
+      ctx.fillStyle='#fff';ctx.font='bold 16px system-ui';ctx.textAlign='center';ctx.fillText(CARS[i].n,tx+tw/2,ty+th-34);ctx.font='12px system-ui';ctx.fillText(CARS[i].d,tx+tw/2,ty+th-52);ctx.font='14px system-ui';
       ctx.font='14px system-ui';ctx.fillText(S.car===i?'Выбрана ✔':S.owned.indexOf(i)>=0?'Выбрать':CARS[i].p+' 🪙',tx+tw/2,ty+th-12);})(i);
     btn(bx,90+2*(th+12)+4,bw,46,'← Назад',function(){state='menu';});
   }else{
-    ctx.font='bold 28px system-ui';ctx.fillText('⛽ Бензин закончился!',W/2,y+60);
-    ctx.font='20px system-ui';ctx.fillText('Ты проехал '+Math.floor(dist)+' м',W/2,y+100);ctx.fillText('Собрал монет: '+run+' 🪙',W/2,y+130);
-    y+=170;btn(bx,y,bw,52,'⛽ Заправиться и ехать',function(){fuel=70;items=[];bump=0;state='play';},true);y+=64;
+    ctx.font='bold 28px system-ui';ctx.fillText(lives<=0?'💥 Авария!':'⛽ Бензин закончился!',W/2,y+50);
+    ctx.font='bold 36px system-ui';ctx.fillText(fin+' очков',W/2,y+100);ctx.font='17px system-ui';ctx.fillText((newBest?'🏆 Новый рекорд!':'Рекорд: '+S.best)+'  ·  '+Math.floor(dist)+' м  ·  +'+run+' 🪙',W/2,y+130);
+    y+=170;btn(bx,y,bw,52,'🏁 Ещё раз!',play,true);y+=64;
     btn(bx,y,bw,48,'🏠 В меню',function(){state='menu';});y+=60;
     btn(bx,y,bw,48,'👥 Позвать друга',function(){share();});
   }
@@ -179,7 +184,8 @@ function overlay(){
 }
 
 function draw(){
-  var w=WORLDS[state==='play'||state==='refuel'?lastW:0];scenery(w);
+  ctx.save();if(shake>0)ctx.translate((Math.random()-.5)*16*shake,(Math.random()-.5)*16*shake);var w=WORLDS[state==='play'||state==='over'?lastW:0];scenery(w);
+  if(state==='play'&&(spd>H*0.55||turbo>0)){ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=2;for(var ql=0;ql<12;ql++){var lx=rx+Math.random()*rw,ly=Math.random()*H;ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx,ly+40+spd*0.05);ctx.stroke();}}
   items.forEach(drawItem);
   if(state!=='menu'&&state!=='garage'){
     var sh=bump>0?Math.sin(t*50)*5:0;
@@ -188,7 +194,7 @@ function draw(){
     pops.forEach(function(p){ctx.globalAlpha=Math.max(0,p.life);ctx.font='bold 22px system-ui';ctx.textAlign='center';ctx.lineWidth=5;ctx.strokeStyle='#fff';ctx.strokeText(p.txt,p.x,p.y);ctx.fillStyle=p.col;ctx.fillText(p.txt,p.x,p.y);ctx.globalAlpha=1;});
     hud();
   }
-  if(state!=='play')overlay();
+  ctx.restore();if(state!=='play')overlay();
 }
 
 var last=performance.now();
